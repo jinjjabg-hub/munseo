@@ -1,0 +1,180 @@
+name: APK 빌드 · 시험 · 릴리스
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write # Releases에 APK를 올리기 위해
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  STAGE_LABEL: '1단계'
+  VERSION_NAME: 1.0.${{ github.run_number }}
+  VERSION_CODE: ${{ github.run_number }}
+  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+  KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      signed: ${{ steps.sign.outputs.signed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: 매니페스트 점검 (인터넷 권한 없음 · 목록과 일치)
+        run: |
+          node tools/gen-manifest.mjs
+          git diff --exit-code -- android/app/src/main/AndroidManifest.xml \
+            || { echo "::error::AndroidManifest.xml 이 tools/gen-manifest.mjs 결과와 다릅니다. 스크립트를 실행해 다시 커밋하세요."; exit 1; }
+          if grep 'uses-permission' android/app/src/main/AndroidManifest.xml | grep -v 'tools:node="remove"'; then
+            echo "::error::매니페스트에 허용된 권한이 있습니다 (이 앱은 권한을 하나도 쓰지 않습니다)"; exit 1
+          fi
+          echo "매니페스트: 추가 권한 없음, INTERNET 은 병합 단계에서 제거 지정" 
+
+      - name: 웹 앱 빌드 → 안드로이드로 복사
+        run: |
+          npm run build
+          npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: 서명키 준비 (GitHub Secrets)
+        id: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::서명키(Secrets 4개)가 없어 릴리스 APK를 만들지 않습니다. README의 '처음 한 번만' 절차를 따라 등록하세요."
+          fi
+
+      - name: APK 빌드 (시험용 debug + 배포용 release)
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon assembleDebug
+          if [ "${{ steps.sign.outputs.signed }}" = "true" ]; then ./gradlew --no-daemon assembleRelease; fi
+
+      - name: APK 점검 (인터넷 권한 · 서명)
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/app-debug.apk
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          check() {
+            echo "=== $1 에 선언된 권한 ===" | tee -a dist/permissions.txt
+            "$BT/aapt2" dump permissions "$1" | tee -a dist/permissions.txt
+            if "$BT/aapt2" dump permissions "$1" | grep -qi 'INTERNET'; then echo "::error::$1 에 INTERNET 권한이 있습니다"; exit 1; fi
+          }
+          check dist/app-debug.apk
+          if [ "${{ steps.sign.outputs.signed }}" = "true" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "dist/munseo-viewer-${VERSION_NAME}.apk"
+            check "dist/munseo-viewer-${VERSION_NAME}.apk"
+            echo "=== 서명 인증서 (매번 같아야 업데이트가 됩니다) ===" | tee -a dist/permissions.txt
+            "$BT/apksigner" verify --print-certs "dist/munseo-viewer-${VERSION_NAME}.apk" | grep -E 'certificate SHA-256|Signer' | tee -a dist/permissions.txt
+            sha256sum "dist/munseo-viewer-${VERSION_NAME}.apk" | tee dist/sha256.txt
+          fi
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: dist/
+          retention-days: 30
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: dist
+      - name: KVM 켜기
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: 에뮬레이터에서 "탭해서 열기" 시험
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          disable-animations: true
+          script: SMOKE_OUT=smoke-out bash tests/android-smoke.sh dist/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-out
+          path: smoke-out/
+          retention-days: 30
+
+  release:
+    needs: [build, smoke]
+    if: needs.build.outputs.signed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke-out
+          path: smoke-out
+      - name: Releases에 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${VERSION_NAME}"
+          APK="dist/munseo-viewer-${VERSION_NAME}.apk"
+          {
+            echo "## 내 문서 뷰어 ${STAGE_LABEL} (빌드 ${{ github.run_number }})"
+            echo
+            echo "### 폰에 설치하는 법"
+            echo "1. 폰에서 이 페이지를 열고 아래 **munseo-viewer-${VERSION_NAME}.apk** 를 눌러 내려받습니다."
+            echo "2. 내려받은 파일을 누르고, 안내가 나오면 '이 출처 허용' → '설치'를 누릅니다. (이전 버전이 있으면 그 위에 그대로 덮어 설치됩니다)"
+            echo "3. 파일 앱에서 문서를 탭 → '내 문서 뷰어' → '항상'."
+            echo
+            echo "### 자동 검증 결과"
+            echo '```'
+            cat dist/permissions.txt
+            echo '```'
+            echo
+            echo "에뮬레이터 시험 (비행기 모드, 앱 꺼진 상태/켜진 상태에서 파일 열기):"
+            echo
+            cat smoke-out/result.md
+            echo
+            echo "SHA-256: \`$(cut -d' ' -f1 dist/sha256.txt)\`"
+          } > notes.md
+          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "내 문서 뷰어 ${STAGE_LABEL} · v${VERSION_NAME}" --notes-file notes.md --latest

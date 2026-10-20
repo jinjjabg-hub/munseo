@@ -1,0 +1,16 @@
+node_modules/
+www/
+dist/
+*.log
+.DS_Store
+# 서명 키 — 절대 커밋 금지
+signing-secrets.txt
+*.jks
+*.keystore
+# 테스트용 큰 파일
+tests/.cache/
+test-results/
+
+# 실제 문서(개인 정보 포함 가능)
+test-files/*
+!test-files/README.md

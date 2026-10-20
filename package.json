@@ -1,0 +1,32 @@
+{
+  "name": "munseo-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "내 문서 뷰어 - 광고 없는 읽기 전용 통합 문서 뷰어 (Android)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "sync": "vite build && cap sync android",
+    "test": "node tests/run.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3",
+    "cfb": "^1.2.2",
+    "docx-preview": "^0.4.1",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "pako": "^3.0.2",
+    "pdfjs-dist": "^6.4.299",
+    "pptx-preview": "^1.0.7",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "playwright-core": "^1.64.1",
+    "vite": "^8.3.4"
+  }
+}

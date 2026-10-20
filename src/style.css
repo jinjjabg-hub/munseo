@@ -1,0 +1,107 @@
+:root {
+  --bg: #f4f5f7; --panel: #ffffff; --text: #1b1d21; --muted: #6b7280; --line: #dfe2e7;
+  --accent: #2563eb; --accent-text: #ffffff; --chip: #e8edf8; --danger: #b42318;
+  --paper: #ffffff; --paper-text: #111111;
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+  font-family: system-ui, -apple-system, 'Noto Sans KR', 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101216; --panel: #1b1e24; --text: #e8eaee; --muted: #9aa3b2; --line: #2c313a;
+    --accent: #6ea0ff; --accent-text: #0b1220; --chip: #262c3a; --danger: #ff8a7a;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100dvh; padding-left: var(--safe-left); padding-right: var(--safe-right); }
+#bar {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  padding: calc(var(--safe-top) + 6px) 10px 6px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+#bar[hidden] { display: none; }
+.bar-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.fname { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.chip { flex: none; font-size: 11.5px; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+#actions { display: flex; gap: 6px; flex: none; }
+.btn {
+  font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  border-radius: 10px; padding: 8px 14px; min-height: 38px; cursor: pointer; flex: none;
+}
+.btn:active { filter: brightness(.92); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.btn.big { font-size: 17px; padding: 14px 34px; border-radius: 14px; }
+#stage { position: relative; flex: 1; min-height: 0; }
+.center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
+.center[hidden], #viewer[hidden] { display: none; }
+.center h1 { margin: 0; font-size: 26px; }
+.logo { font-size: 56px; }
+.hint { margin: 0; color: var(--muted); line-height: 1.6; font-size: 15px; }
+.hint.small { font-size: 13px; }
+.err-text { margin: 0; font-size: 17px; line-height: 1.5; max-width: 22em; color: var(--danger); font-weight: 600; word-break: keep-all; }
+.spinner { width: 34px; height: 34px; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#viewer { position: absolute; inset: 0; display: flex; flex-direction: column; }
+
+/* 공통: 스크롤 영역 */
+.scroller { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; background: var(--bg); }
+.scroller:focus { outline: none; }
+
+/* 한글(hwp/hwpx) 글자 보기: 화면 폭에 맞춰 글자가 줄바꿈된다 */
+.hw-doc { max-width: 46em; margin: 0 auto; padding: 14px 16px calc(var(--safe-bottom) + 40px); font-size: 16px; line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere; }
+.hw-doc p { margin: 0 0 .55em; }
+.hw-doc p.hw-empty { margin: 0; height: .6em; }
+.hw-table-wrap { overflow-x: auto; margin: .6em 0; }
+.hw-table { border-collapse: collapse; font-size: .92em; line-height: 1.5; overflow-wrap: break-word; }
+.hw-table td { border: 1px solid var(--line); padding: 4px 8px; vertical-align: top; min-width: 2.5em; overflow-wrap: break-word; }
+.hw-table td p { margin: 0 0 .2em; }
+.hw-note, .hw-box { margin: .6em 0; padding: 8px 12px; border-left: 3px solid var(--line); background: var(--panel); border-radius: 6px; }
+.hw-note { color: var(--muted); font-size: .9em; }
+.hw-label { font-size: .78em; font-weight: 700; color: var(--muted); margin-right: .4em; }
+.hw-obj { color: var(--muted); font-size: .9em; }
+.hw-obj code { white-space: pre-wrap; }
+
+/* 쪽(종이) 형태: 워드·파워포인트 — 어두운 화면에서도 종이는 흰색 */
+.pages-wrap { width: max-content; min-width: 100%; transform-origin: 0 0; }
+.pages-wrap.docx-wrapper { background: transparent !important; padding: 12px !important; }
+.pages-wrap .docx-wrapper > section.docx { margin-bottom: 12px !important; box-shadow: 0 1px 6px rgba(0,0,0,.25); }
+
+/* 읽기 모드(워드): 폭에 맞춰 흐르는 글 */
+.reflow { max-width: 46em; margin: 0 auto; padding: 14px 16px calc(var(--safe-bottom) + 40px); background: var(--paper); color: var(--paper-text); line-height: 1.7; font-size: 16px; overflow-wrap: anywhere; }
+.reflow h1 { font-size: 1.5em; } .reflow h2 { font-size: 1.3em; } .reflow h3 { font-size: 1.15em; }
+.reflow h1, .reflow h2, .reflow h3 { line-height: 1.3; margin: 1em 0 .4em; }
+.reflow img { max-width: 100%; height: auto; }
+.reflow table { border-collapse: collapse; margin: .6em 0; display: block; overflow-x: auto; }
+.reflow td, .reflow th { border: 1px solid #c7c9cf; padding: 4px 8px; vertical-align: top; }
+
+/* 파워포인트 슬라이드 */
+.slides-wrap { width: max-content; transform-origin: 0 0; padding: 12px; }
+.slides-wrap .pptx-preview-wrapper { background: transparent !important; height: auto !important; overflow: visible !important; }
+.slides-wrap .pptx-preview-slide-wrapper { box-shadow: 0 1px 6px rgba(0,0,0,.3); }
+
+/* 엑셀 */
+.xl { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.xl-scroll { flex: 1; min-height: 0; overflow: auto; position: relative; touch-action: pan-x pan-y; background: var(--panel); overscroll-behavior: contain; }
+.xl-colhead { position: sticky; top: 0; z-index: 3; background: var(--chip); border-bottom: 1px solid var(--line); }
+.xl-body { position: relative; }
+.xl-rowhead { position: sticky; left: 0; z-index: 2; background: var(--chip); border-right: 1px solid var(--line); }
+.xl-corner { position: sticky; left: 0; z-index: 4; background: var(--chip); border-right: 1px solid var(--line); }
+.xl-cells { position: absolute; top: 0; }
+.xl .c, .xl .h { position: absolute; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 0 6px; }
+.xl .h { background: var(--chip); color: var(--muted); text-align: center; padding: 0; }
+.xl .c.n { text-align: right; }
+.xl-tabs { display: flex; gap: 4px; overflow-x: auto; flex: none; padding: 6px 8px calc(var(--safe-bottom) + 6px); background: var(--panel); border-top: 1px solid var(--line); }
+.xl-tab { flex: none; font: inherit; font-size: 13.5px; border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 8px; padding: 7px 14px; max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xl-tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.xl-note { flex: none; font-size: 12px; color: var(--muted); padding: 4px 10px; background: var(--panel); border-top: 1px solid var(--line); }
+
+/* PDF */
+.pdf-pages { display: flex; flex-direction: column; align-items: center; min-width: 100%; width: max-content; padding: 8px 0 calc(var(--safe-bottom) + 20px); }
+.pdf-page { position: relative; background: #fff; margin: 0 0 8px; box-shadow: 0 1px 5px rgba(0,0,0,.3); flex: none; overflow: hidden; }
+.pdf-page canvas { display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.pdf-page .pg-num { position: absolute; right: 6px; bottom: 4px; font-size: 11px; color: #9aa; pointer-events: none; }
+.pdf-indicator { position: absolute; right: 10px; bottom: calc(var(--safe-bottom) + 12px); z-index: 5; background: rgba(0,0,0,.65); color: #fff; font-size: 13px; padding: 5px 11px; border-radius: 999px; pointer-events: none; transition: opacity .3s; }
+.textLayer { --scale-factor: 1; }
+.textLayer :is(span, br) { color: transparent; }

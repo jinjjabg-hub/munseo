@@ -1,0 +1,6 @@
+{
+  "appId": "com.jinjjabg.docviewer",
+  "appName": "내 문서 뷰어",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}

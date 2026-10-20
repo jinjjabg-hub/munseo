@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 디버그(시험용) 빌드에만 들어가는 파일 제공자. 릴리스 APK에는 포함되지 않는다. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name=".SmokeProvider"
+            android:authorities="com.jinjjabg.docviewer.smoke"
+            android:exported="true" />
+    </application>
+</manifest>
