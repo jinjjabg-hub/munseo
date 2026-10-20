@@ -32,7 +32,7 @@ if echo "$PERMS" | grep -q "android.permission.INTERNET"; then rec "INTERNET 권
 check_resolve() { # 설명 URI MIME(없으면 -)
   local args=(-a android.intent.action.VIEW -c android.intent.category.DEFAULT -d "$2")
   [ "$3" != "-" ] && args+=(-t "$3")
-  local o; o="$(adb shell cmd package query-intent-activities --brief "${args[@]}" 2>&1 | tr -d '\r')"
+  local o; o="$(adb shell cmd package resolve-activity --brief --all "${args[@]}" 2>&1 | tr -d '\r')"
   if echo "$o" | grep -q "$PKG"; then rec "후보에 뜸: $1" PASS "$2 ${3}"; else rec "후보에 뜸: $1" FAIL "$(echo "$o" | head -2 | tr '\n' ' ')"; fi
 }
 check_resolve "hwp (x-hwp)"            "content://x.provider/doc/1"                  application/x-hwp
@@ -74,7 +74,8 @@ open_and_wait() { # 이름 파일 MIME kind 표시글자
     rec "$1" PASS "$(echo "$line" | sed 's/.*munseo:opened //' | cut -c1-120)"
   else
     rec "$1" FAIL "열림 로그 없음 또는 글자 불일치: ${line:-없음}"
-    adb logcat -d 2>/dev/null | grep -i -E "capacitor|chromium|munseo|AndroidRuntime|FATAL" | tail -30 > "$OUT/logcat-$1.txt"
+    adb logcat -d 2>/dev/null | grep -i -E "capacitor|chromium|munseo|AndroidRuntime|FATAL" | tail -40 > "$OUT/logcat-$1.txt"
+    echo "--- logcat ($1) ---"; cat "$OUT/logcat-$1.txt"; echo "--- end ---"
   fi
 }
 

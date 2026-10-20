@@ -1,11 +1,12 @@
 // PDF: 보이는 쪽만 그린다(스크롤하면 불러오고, 멀어지면 비운다). 글자 선택 가능.
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+// 워커를 .js 파일로 묶어 쓴다 (안드로이드 내부 서버가 .mjs를 자바스크립트로 인식하지 못할 수 있음)
+import PdfWorker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker';
 import 'pdfjs-dist/legacy/web/pdf_viewer.css';
 import { encrypted, corrupt, ViewerError } from '../errors.js';
 import { attachPinch } from '../zoom.js';
 
-pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
 
 const GAP = 8; // 쪽 사이 간격(px)
 const SIDE = 8; // 좌우 여백(px)
