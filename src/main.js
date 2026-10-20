@@ -1,3 +1,4 @@
+import './polyfills.js';
 import './style.css';
 import { detect, humanSize } from './format.js';
 import { ViewerError } from './errors.js';

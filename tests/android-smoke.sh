@@ -32,8 +32,8 @@ if echo "$PERMS" | grep -q "android.permission.INTERNET"; then rec "INTERNET 권
 check_resolve() { # 설명 URI MIME(없으면 -)
   local args=(-a android.intent.action.VIEW -c android.intent.category.DEFAULT -d "$2")
   [ "$3" != "-" ] && args+=(-t "$3")
-  local o; o="$(adb shell cmd package resolve-activity --brief --all "${args[@]}" 2>&1 | tr -d '\r')"
-  if echo "$o" | grep -q "$PKG"; then rec "후보에 뜸: $1" PASS "$2 ${3}"; else rec "후보에 뜸: $1" FAIL "$(echo "$o" | head -2 | tr '\n' ' ')"; fi
+  local o; o="$(adb shell cmd package query-activities --brief "${args[@]}" 2>&1 | tr -d '\r')"
+  if echo "$o" | grep -q "$PKG"; then rec "후보에 뜸: $1" PASS "$2 ${3}"; else rec "후보에 뜸: $1" FAIL "$(echo "$o" | head -4 | tr '\n' ' ' | cut -c1-200)"; fi
 }
 check_resolve "hwp (x-hwp)"            "content://x.provider/doc/1"                  application/x-hwp
 check_resolve "hwp (haansofthwp)"      "content://x.provider/doc/1"                  application/haansofthwp
