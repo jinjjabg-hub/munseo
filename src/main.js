@@ -182,7 +182,13 @@ async function runFind() {
     return { count: 0, index: -1 };
   }
   els.findCount.textContent = '찾는 중…';
-  return showCount(await current.search.find(q));
+  try {
+    return showCount(await current.search.find(q));
+  } catch (e) {
+    console.warn('search failed', e);
+    els.findCount.textContent = '검색 오류';
+    return { count: 0, index: -1, error: String((e && e.stack) || e).slice(0, 300) };
+  }
 }
 const step = async (dir) => {
   if (!current || !current.search || !els.findInput.value.trim()) return { count: 0, index: -1 };

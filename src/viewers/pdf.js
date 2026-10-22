@@ -231,7 +231,8 @@ export async function open(container, buffer, ctx = {}) {
     // 그 쪽이 그려질 때까지 기다린 뒤 강조하고, 결과 위치로 이동
     for (let k = 0; k < 100; k++) {
       renderPage(h.page);
-      if (states[h.page].ready) { await states[h.page].ready; break; }
+      // 글자층이 안 만들어지는 쪽이 있어도 무한정 기다리지 않는다 (최대 3초)
+      if (states[h.page].ready) { await Promise.race([states[h.page].ready, new Promise((r) => setTimeout(r, 3000))]); break; }
       await new Promise((r) => setTimeout(r, 50));
     }
     applyHighlights(h.page);

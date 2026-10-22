@@ -123,7 +123,7 @@ find_check() { # 이름 파일 MIME 검색어 최소건수
   sleep 4
   local r; r="$(cdp "window.__app.search('$4')")"
   local c; c="$(echo "$r" | sed -n 's/.*"count":\([0-9]*\).*/\1/p')"
-  if [ -n "$c" ] && [ "$c" -ge "$5" ]; then rec "검색: $1" PASS "'$4' → $r"; else rec "검색: $1" FAIL "'$4' → ${r:-응답 없음}"; fi
+  if [ -n "$c" ] && [ "$c" -ge "$5" ]; then rec "검색: $1" PASS "'$4' → $r"; else rec "검색: $1" FAIL "'$4' → ${r:-응답 없음} $(head -c 300 "$OUT/cdp-err.txt" 2>/dev/null | tr '\n' ' ')"; adb logcat -d 2>/dev/null | grep -E "Capacitor/Console" | tail -15 | cut -c1-300; fi
 }
 find_check "한글" sample.hwp application/x-hwp "두 번째" 1
 find_check "워드" sample.docx application/vnd.openxmlformats-officedocument.wordprocessingml.document "시험" 1
