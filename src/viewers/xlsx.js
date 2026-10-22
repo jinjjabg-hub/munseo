@@ -32,6 +32,9 @@ function readBook(buffer, name) {
   }
 }
 
+const cellText = (cell) => (!cell ? '' : cell.w != null ? String(cell.w) : cell.v == null ? '' : String(cell.v));
+const sheetRange = (ws) => (ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } });
+
 // 시트 하나를 화면에 그리는 일꾼
 function makeSheetView(ws, host) {
   const ref = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } };
@@ -74,6 +77,8 @@ function makeSheetView(ws, host) {
     for (let r = 0; r < m.rs; r++) for (let c = 0; c < m.cs; c++) if (r || c) covered.set(m.r + r + ',' + (m.c + c), true);
   }
 
+  let hitSet = new Set(); // r * nCols + c
+  let hitCur = -1;
   let z = 1;
   let colX = [];
   let totalW = 0;
@@ -121,16 +126,22 @@ function makeSheetView(ws, host) {
   };
 
   let pending = false;
-  function paint() {
+  let painted = null; // 지금 그려 둔 범위 {r0,r1,c0,c1,z}
+  function paint(force = true) {
     pending = false;
     const rh = rowH();
     const hh = BASE.colHeadH * z, hw = BASE.rowHeadW * z;
     const viewW = scroll.clientWidth, viewH = scroll.clientHeight;
     const sl = Math.max(0, scroll.scrollLeft - hw), st = scroll.scrollTop;
-    const r0 = Math.max(0, Math.floor(st / rh) - 15);
-    const r1 = Math.min(nRows - 1, Math.ceil((st + viewH) / rh) + 15);
-    const c0 = Math.max(0, find(colX, sl) - 3);
-    const c1 = Math.min(nCols - 1, find(colX, sl + viewW) + 3);
+    // 화면에 보이는 범위가 이미 그려 둔 범위 안이면 다시 그리지 않는다 (스크롤이 부드럽도록)
+    const vr0 = Math.max(0, Math.floor(st / rh)), vr1 = Math.min(nRows - 1, Math.ceil((st + viewH) / rh));
+    const vc0 = Math.max(0, find(colX, sl)), vc1 = Math.min(nCols - 1, find(colX, sl + viewW));
+    if (!force && painted && painted.z === z && vr0 >= painted.r0 && vr1 <= painted.r1 && vc0 >= painted.c0 && vc1 <= painted.c1) return;
+    const r0 = Math.max(0, vr0 - 40);
+    const r1 = Math.min(nRows - 1, vr1 + 40);
+    const c0 = Math.max(0, vc0 - 4);
+    const c1 = Math.min(nCols - 1, vc1 + 4);
+    painted = { r0, r1, c0, c1, z };
     const fs = BASE.font * z;
     const lh = rh;
 
@@ -141,7 +152,9 @@ function makeSheetView(ws, host) {
       const cell = cellAt(r, c);
       const t = textAt(r, c);
       const num = cell && cell.t === 'n' ? ' n' : '';
-      h += `<div class="c${num}" style="left:${x}px;top:${y}px;width:${w}px;height:${hgt}px;line-height:${lh}px">${t ? esc(t) : ''}</div>`;
+      const hk = r * nCols + c;
+      const hit = hitSet.has(hk) ? (hk === hitCur ? ' hit cur' : ' hit') : '';
+      h += `<div class="c${num}${hit}" style="left:${x}px;top:${y}px;width:${w}px;height:${hgt}px;line-height:${lh}px">${t ? esc(t) : ''}</div>`;
     };
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
@@ -175,7 +188,7 @@ function makeSheetView(ws, host) {
     rowHeadInner.style.font = `${fs * 0.9}px system-ui, sans-serif`;
   }
   const schedule = () => {
-    if (!pending) { pending = true; requestAnimationFrame(paint); }
+    if (!pending) { pending = true; requestAnimationFrame(() => paint(false)); }
   };
 
   function layout() {
@@ -200,7 +213,7 @@ function makeSheetView(ws, host) {
   layout();
 
   return {
-    rows: nRows, cols: nCols,
+    rows: nRows,
     getZoom: () => z,
     setZoom(next, mx = 0, my = 0) {
       const old = z;
@@ -212,6 +225,17 @@ function makeSheetView(ws, host) {
       paint();
     },
     onResize: schedule,
+    setHits(set, cur) { hitSet = set; hitCur = cur; paint(); },
+    scrollToCell(r, c) {
+      const hh = BASE.colHeadH * z, hw = BASE.rowHeadW * z;
+      const x = hw + colX[c], y = hh + r * rowH();
+      const w = colX[c + 1] - colX[c];
+      const vw = scroll.clientWidth, vh = scroll.clientHeight;
+      scroll.scrollTop = Math.max(0, y - vh / 2);
+      if (x < scroll.scrollLeft + hw || x + w > scroll.scrollLeft + vw) scroll.scrollLeft = Math.max(0, x - vw / 2 + w / 2);
+      paint();
+    },
+    cols: nCols,
     destroy() { scroll.removeEventListener('scroll', schedule); },
   };
 }
@@ -234,12 +258,19 @@ export async function open(container, buffer, ctx = {}) {
 
   let view = null;
   let zoom = 1;
+  let curSheet = 0;
+  const hitSets = names.map(() => new Set());
+  let hits = [];
+  let hitIdx = -1;
+  const keyOf = (h) => h.r * view.cols + h.c;
   const show = (i) => {
     view?.destroy();
+    curSheet = i;
     scroll.scrollTop = 0;
     scroll.scrollLeft = 0;
     view = makeSheetView(wb.Sheets[names[i]], scroll);
     if (zoom !== 1) view.setZoom(zoom);
+    if (hits.length) view.setHits(hitSets[i], hitIdx >= 0 && hits[hitIdx].s === i ? keyOf(hits[hitIdx]) : -1);
     [...tabs.children].forEach((b, j) => b.setAttribute('aria-selected', String(i === j)));
     window.__perf = Object.assign(window.__perf || {}, { xlsxRows: view.rows, xlsxCols: view.cols });
   };
@@ -255,6 +286,53 @@ export async function open(container, buffer, ctx = {}) {
   if (names.length === 1) tabs.style.display = 'none';
   show(0);
 
+  // ---- 검색: 모든 시트의 칸 글자를 훑는다 ----
+  const norm = (t) => t.normalize('NFC').toLowerCase();
+  async function find(query) {
+    const q = norm(query.trim());
+    hits = [];
+    hitIdx = -1;
+    hitSets.forEach((st) => st.clear());
+    if (!q) { view.setHits(hitSets[curSheet], -1); return { count: 0, index: -1 }; }
+    let budget = 0;
+    outer: for (let si = 0; si < names.length; si++) {
+      const ws = wb.Sheets[names[si]];
+      const ref = sheetRange(ws);
+      const nCols = ref.e.c - ref.s.c + 1;
+      for (let r = 0; r <= ref.e.r - ref.s.r; r++) {
+        const row = ws[ref.s.r + r];
+        if (!row) continue;
+        for (let c = 0; c < nCols; c++) {
+          const t = cellText(row[ref.s.c + c]);
+          if (t && norm(t).includes(q)) {
+            hits.push({ s: si, r, c });
+            hitSets[si].add(r * nCols + c);
+            if (hits.length >= 5000) break outer;
+          }
+        }
+        if (++budget % 4000 === 0) await new Promise((res) => setTimeout(res, 0));
+      }
+    }
+    if (hits.length) return go(0);
+    view.setHits(hitSets[curSheet], -1);
+    return { count: 0, index: -1 };
+  }
+  function go(i) {
+    if (!hits.length) return { count: 0, index: -1 };
+    hitIdx = (i + hits.length) % hits.length;
+    const h = hits[hitIdx];
+    if (h.s !== curSheet) show(h.s);
+    view.setHits(hitSets[h.s], keyOf(h));
+    view.scrollToCell(h.r, h.c);
+    return { count: hits.length, index: hitIdx };
+  }
+  const search = {
+    find,
+    next: async () => go(hitIdx + 1),
+    prev: async () => go(hitIdx - 1),
+    clear: async () => { hits = []; hitIdx = -1; hitSets.forEach((st) => st.clear()); view.setHits(hitSets[curSheet], -1); },
+  };
+
   const detachPinch = attachPinch(scroll, {
     min: 0.5, max: 4,
     get: () => view.getZoom(),
@@ -268,8 +346,43 @@ export async function open(container, buffer, ctx = {}) {
   const onResize = () => view?.onResize();
   window.addEventListener('resize', onResize);
 
+  // PDF 저장용: 전체 시트를 정적 표로 (행이 너무 많으면 앞부분만)
+  const PRINT_ROW_LIMIT = 3000;
+  async function print() {
+    const root = document.createElement('div');
+    root.className = 'xl-print';
+    let truncated = false;
+    for (let si = 0; si < names.length; si++) {
+      const ws = wb.Sheets[names[si]];
+      const ref = sheetRange(ws);
+      const nRows = ref.e.r - ref.s.r + 1, nCols = ref.e.c - ref.s.c + 1;
+      const rows = Math.min(nRows, PRINT_ROW_LIMIT);
+      if (nRows > rows) truncated = true;
+      const h = document.createElement('h3');
+      h.textContent = names[si];
+      let html = '<table>';
+      for (let r = 0; r < rows; r++) {
+        const row = ws[ref.s.r + r];
+        html += '<tr>';
+        for (let c = 0; c < nCols; c++) html += `<td>${esc(cellText(row && row[ref.s.c + c]))}</td>`;
+        html += '</tr>';
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'xl-print-sheet';
+      wrap.append(h);
+      wrap.insertAdjacentHTML('beforeend', html + '</table>');
+      if (nRows > rows) wrap.insertAdjacentHTML('beforeend', `<p class="xl-print-note">행이 많아서 앞 ${rows.toLocaleString()}행만 저장했어요. (전체 ${nRows.toLocaleString()}행)</p>`);
+      root.append(wrap);
+      if (si % 2) await new Promise((res) => setTimeout(res, 0));
+    }
+    return { node: root, orientation: 'landscape', note: truncated ? `행이 많은 시트는 앞 ${PRINT_ROW_LIMIT.toLocaleString()}행만 저장했어요.` : '' };
+  }
+
   return {
     kind: 'xlsx',
+    search,
+    printable: true,
+    print,
     sheets: names.length,
     destroy() {
       detachPinch();

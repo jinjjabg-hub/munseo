@@ -221,6 +221,40 @@ def make_hwpx():
     doc.add_paragraph('표 아래 문단입니다. END-OF-HWPX')
     doc.save_to_path(os.path.join(OUT, 'sample.hwpx'))
 
+def make_other_formats():
+    # LibreOffice로 옛 형식·OpenDocument·RTF 만들기 (한글 글자 포함)
+    for src, fmts in (('complex.docx', ('doc', 'odt', 'rtf')), ('table-picture.pptx', ('ppt', 'odp'))):
+        for fmt in fmts:
+            subprocess.run(['soffice', '--headless', '--convert-to', fmt, '--outdir', OUT, os.path.join(OUT, src)], capture_output=True)
+    for old, new in (('complex.doc', 'legacy-korean.doc'), ('table-picture.ppt', 'legacy-korean.ppt'), ('complex.odt', 'sample.odt'), ('table-picture.odp', 'sample.odp'), ('complex.rtf', 'sample.rtf')):
+        if os.path.exists(os.path.join(OUT, old)): shutil.move(os.path.join(OUT, old), os.path.join(OUT, new))
+    # 텍스트류
+    open(os.path.join(OUT, 'utf8.txt'), 'w', encoding='utf-8').write('한글 텍스트 파일입니다.\n두 번째 줄: ABC 123\nEND-OF-TXT\n')
+    open(os.path.join(OUT, 'cp949.txt'), 'wb').write('윈도 메모장(CP949)으로 저장한 한글 파일\r\n두 번째 줄 END-OF-CP949\r\n'.encode('cp949'))
+    open(os.path.join(OUT, 'readme.md'), 'w', encoding='utf-8').write('# 제목\n\n- 항목 **굵게**\n\nEND-OF-MD\n')
+    open(os.path.join(OUT, 'data.json'), 'w', encoding='utf-8').write('{"이름": "홍길동", "점수": [90, 85], "끝": "END-OF-JSON"}')
+    open(os.path.join(OUT, 'feed.xml'), 'w', encoding='utf-8').write('<?xml version="1.0" encoding="UTF-8"?><root><item>가나다</item><item>END-OF-XML</item></root>')
+    open(os.path.join(OUT, 'page.html'), 'w', encoding='utf-8').write('<html><body><h1>제목</h1><script>document.title="X"</script><p>END-OF-HTML</p></body></html>')
+    # 이미지
+    png(os.path.join(OUT, 'photo.png'), 1200, 800, (30, 140, 90), 'PNG')
+    Image.open(os.path.join(OUT, 'photo.png')).convert('RGB').save(os.path.join(OUT, 'photo.jpg'), quality=85)
+    Image.open(os.path.join(OUT, 'photo.png')).save(os.path.join(OUT, 'photo.webp'))
+    Image.open(os.path.join(OUT, 'photo.png')).resize((300, 200)).save(os.path.join(OUT, 'anim.gif'))
+    # 암호 걸린 옛 형식 / 큰 한국어 PDF
+    for n in ('encrypted.doc', 'encrypted.ppt', 'harmless-clean.doc', 'embedded-simple-2007.ppt', 'sample_with_vba.ppt', 'issue_251.rtf'):
+        src = os.path.join('/tmp/claude-0/real-old', n)
+        if os.path.exists(src): shutil.copy(src, os.path.join(OUT, 'real-' + n))
+
+def make_korean_big_pdf():
+    from docx import Document
+    d = Document()
+    for i in range(1, 121):
+        d.add_paragraph(f'{i}쪽 한글 문단입니다. 대한민국 가나다라마바사 아자차카타파하. 검색어-{i:03d} 와 END-KP-{i}. ' * 6)
+        d.add_page_break()
+    p = os.path.join(OUT, '_kbig.docx'); d.save(p)
+    subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', OUT, p], capture_output=True)
+    if os.path.exists(os.path.join(OUT, '_kbig.pdf')): shutil.move(os.path.join(OUT, '_kbig.pdf'), os.path.join(OUT, 'korean-100.pdf'))
+
 def copy_real_hwp():
     # 사용자가 test-files에 넣어둔 .hwp + 외부에서 구한 실제 샘플
     dst = os.path.join(OUT, 'hwp'); os.makedirs(dst, exist_ok=True)
@@ -232,7 +266,7 @@ def copy_real_hwp():
                     shutil.copy(os.path.join(dp, f), os.path.join(dst, os.path.relpath(os.path.join(dp, f), root).replace(os.sep, '_')))
 
 if __name__ == '__main__':
-    steps = [make_docx, make_pptx, make_xlsx, make_pdf, make_korean_pdf, make_protected, make_hwpx, copy_real_hwp]
+    steps = [make_docx, make_pptx, make_xlsx, make_pdf, make_korean_pdf, make_protected, make_hwpx, make_other_formats, make_korean_big_pdf, copy_real_hwp]
     for s in steps:
         try: s(); print('ok', s.__name__)
         except Exception as e: print('FAIL', s.__name__, repr(e)); 

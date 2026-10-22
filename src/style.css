@@ -25,7 +25,6 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .bar-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
 .fname { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .chip { flex: none; font-size: 11.5px; color: var(--muted); background: var(--chip); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
-#actions { display: flex; gap: 6px; flex: none; }
 .btn {
   font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--text);
   border-radius: 10px; padding: 8px 14px; min-height: 38px; cursor: pointer; flex: none;
@@ -105,3 +104,61 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .pdf-indicator { position: absolute; right: 10px; bottom: calc(var(--safe-bottom) + 12px); z-index: 5; background: rgba(0,0,0,.65); color: #fff; font-size: 13px; padding: 5px 11px; border-radius: 999px; pointer-events: none; transition: opacity .3s; }
 .textLayer { --scale-factor: 1; }
 .textLayer :is(span, br) { color: transparent; }
+
+/* 텍스트 파일 */
+.txt-doc { padding: 10px 14px calc(var(--safe-bottom) + 40px); font: 14px/1.55 ui-monospace, 'SF Mono', Menlo, Consolas, 'Noto Sans Mono CJK KR', monospace; }
+.txt-doc pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.hw-h { margin: 1.1em 0 .4em; padding-bottom: .2em; border-bottom: 1px solid var(--line); font-size: 1em; }
+
+/* 이미지 */
+.img-wrap { display: inline-block; padding: 8px; }
+.img-wrap img { display: block; max-width: none; }
+
+/* 검색 결과 표시 */
+mark.find-hit { background: #ffe14d; color: #000; border-radius: 2px; }
+mark.find-hit.cur { background: #ff9f1a; outline: 2px solid #ff7a00; }
+.textLayer mark.find-hit { color: transparent; background: rgba(255, 225, 77, .55); }
+.textLayer mark.find-hit.cur { background: rgba(255, 159, 26, .6); outline: 2px solid #ff7a00; }
+
+.xl .c.hit { background: rgba(255, 225, 77, .55); }
+.xl .c.hit.cur { background: rgba(255, 159, 26, .7); outline: 2px solid #ff7a00; outline-offset: -2px; z-index: 1; }
+
+/* 도구 줄 · 검색 바 · 메시지 */
+#tools { display: flex; gap: 6px; align-items: center; flex: none; padding: 5px 10px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+#tools[hidden], #findbar[hidden], #msg[hidden] { display: none; }
+#actions { display: flex; gap: 6px; }
+.btn.tool { padding: 5px 12px; min-height: 34px; font-size: 13.5px; white-space: nowrap; }
+.btn[hidden] { display: none; }
+#findbar { display: flex; align-items: center; gap: 6px; flex: none; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+#find-input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); }
+.find-count { flex: none; font-size: 12.5px; color: var(--muted); min-width: 3.6em; text-align: center; }
+#msg { position: fixed; left: 10px; right: 10px; bottom: calc(var(--safe-bottom) + 12px); z-index: 20; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; background: #1f2937; color: #fff; font-size: 14px; line-height: 1.45; box-shadow: 0 4px 18px rgba(0,0,0,.35); word-break: keep-all; overflow-wrap: anywhere; }
+#msg span { flex: 1; }
+#msg.err { background: #7f1d1d; }
+#msg button { flex: none; border: 0; background: transparent; color: inherit; font-size: 16px; padding: 4px 8px; cursor: pointer; }
+
+/* PDF로 저장(인쇄)용 — 화면에는 보이지 않는다 */
+#print-root { display: none; }
+@media print {
+  html, body { overflow: visible !important; height: auto !important; background: #fff !important; }
+  #app, #msg { display: none !important; }
+  #print-root { display: block !important; color: #000; background: #fff; --bg: #fff; --panel: #fff; --text: #000; --muted: #555; --line: #999; --paper: #fff; --paper-text: #000; }
+  #print-root .hw-doc, #print-root .txt-doc { max-width: none; padding: 0; font-size: 11pt; color: #000; zoom: 1 !important; }
+  #print-root .hw-table-wrap { overflow: visible; }
+  #print-root .hw-table td { border-color: #888; }
+  #print-root tr, #print-root .hw-note, #print-root .hw-box { break-inside: avoid; }
+  #print-root .hw-note, #print-root .hw-box { background: #f3f3f3; }
+  #print-root .pages-wrap { width: auto !important; min-width: 0 !important; zoom: 1 !important; }
+  #print-root .docx-wrapper { background: none !important; padding: 0 !important; display: block !important; }
+  #print-root section.docx { margin: 0 auto !important; box-shadow: none !important; break-after: page; }
+  #print-root .reflow { max-width: none; padding: 0; }
+  #print-root .slides-wrap { padding: 0; zoom: 1 !important; width: auto; }
+  #print-root .pptx-preview-wrapper { width: auto !important; height: auto !important; overflow: visible !important; }
+  #print-root .pptx-preview-slide-wrapper { margin: 0 auto !important; box-shadow: none !important; break-after: page; break-inside: avoid; }
+  #print-root .xl-print-sheet { break-after: page; }
+  #print-root .xl-print table { border-collapse: collapse; font-size: 8pt; }
+  #print-root .xl-print td { border: 1px solid #999; padding: 2px 5px; vertical-align: top; max-width: 40em; overflow-wrap: anywhere; }
+  #print-root .xl-print h3 { margin: 0 0 6px; font-size: 11pt; }
+  #print-root .xl-print-note { font-size: 9pt; color: #555; }
+  #print-root mark.find-hit { background: none; outline: none; }
+}

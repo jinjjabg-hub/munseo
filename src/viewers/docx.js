@@ -2,6 +2,7 @@
 import { renderAsync } from 'docx-preview';
 import { corrupt } from '../errors.js';
 import { makeZoomable } from '../zoom.js';
+import { createDomSearch } from '../search.js';
 
 async function renderReflow(scroller, buffer) {
   const mammoth = (await import('mammoth/mammoth.browser.js')).default;
@@ -22,6 +23,7 @@ export async function open(container, buffer, ctx = {}) {
 
   let zoomer = null;
   let mode = 'page';
+  const search = createDomSearch(scroller, scroller);
 
   async function showPage() {
     const content = document.createElement('div');
@@ -68,6 +70,7 @@ export async function open(container, buffer, ctx = {}) {
   }
 
   const toggle = async () => {
+    await search.clear();
     scroller.replaceChildren();
     zoomer?.destroy();
     try {
@@ -83,6 +86,14 @@ export async function open(container, buffer, ctx = {}) {
 
   return {
     kind: 'docx',
+    search,
+    printable: true,
+    async print() {
+      const src = scroller.querySelector(mode === 'page' ? '.pages-wrap' : '.reflow');
+      const node = src.cloneNode(true);
+      node.style.zoom = '';
+      return { node, orientation: 'portrait' };
+    },
     destroy() {
       zoomer?.destroy();
       container.replaceChildren();

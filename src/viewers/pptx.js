@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { init } from 'pptx-preview';
 import { corrupt } from '../errors.js';
 import { makeZoomable } from '../zoom.js';
+import { createDomSearch } from '../search.js';
 
 async function slideSize(buffer) {
   try {
@@ -71,8 +72,17 @@ export async function open(container, buffer, ctx = {}) {
       throw corrupt('파워포인트 파일이 손상됐거나 읽을 수 없어요.');
     }
   }
+  const search = createDomSearch(scroller, scroller);
   return {
     kind: 'pptx',
+    search,
+    printable: true,
+    async print() {
+      const src = scroller.querySelector('.slides-wrap') || scroller.querySelector('.hw-doc');
+      const node = src.cloneNode(true);
+      node.style.zoom = '';
+      return { node, orientation: usedFallback ? 'portrait' : 'landscape' };
+    },
     fallback: usedFallback,
     destroy() {
       zoomer?.destroy();

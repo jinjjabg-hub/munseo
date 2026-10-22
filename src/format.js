@@ -4,12 +4,19 @@ import { unsupported, encrypted } from './errors.js';
 const EXT = {
   pdf: 'pdf',
   hwp: 'hwp', hwpx: 'hwpx',
-  docx: 'docx',
+  docx: 'docx', doc: 'doc',
   xlsx: 'xlsx', xlsm: 'xlsx', xls: 'xlsx', csv: 'xlsx', ods: 'xlsx',
-  pptx: 'pptx',
+  pptx: 'pptx', ppt: 'ppt',
+  odt: 'odf', odp: 'odf',
+  rtf: 'rtf',
+  txt: 'text', md: 'text', json: 'text', xml: 'text', html: 'text', htm: 'text',
+  png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', gif: 'image',
 };
 
-const LABEL = { pdf: 'PDF', hwp: '한글', hwpx: '한글', docx: '워드', xlsx: '엑셀', pptx: '파워포인트' };
+const LABEL = {
+  pdf: 'PDF', hwp: '한글', hwpx: '한글', docx: '워드', doc: '워드', xlsx: '엑셀', pptx: '파워포인트', ppt: '파워포인트',
+  odf: 'OpenDocument', rtf: 'RTF', text: '텍스트', image: '이미지',
+};
 
 export const extOf = (name) => {
   const m = /\.([^.\\/]+)$/.exec(name || '');
@@ -28,6 +35,11 @@ export async function detect(name, buffer) {
 
   if (startsWith(u8, [0x25, 0x50, 0x44, 0x46]) || new TextDecoder('latin1').decode(u8).includes('%PDF-')) {
     if (kind !== 'pdf' && ext !== 'txt') kind = 'pdf';
+  } else if (startsWith(u8, [0x89, 0x50, 0x4e, 0x47]) || startsWith(u8, [0xff, 0xd8, 0xff]) || startsWith(u8, [0x47, 0x49, 0x46, 0x38]) ||
+             (startsWith(u8, [0x52, 0x49, 0x46, 0x46]) && String.fromCharCode(...u8.subarray(8, 12)) === 'WEBP')) {
+    kind = 'image';
+  } else if (/^\s*\{\\rtf/.test(String.fromCharCode(...u8.subarray(0, 32)))) {
+    kind = 'rtf';
   } else if (startsWith(u8, CFB_MAGIC)) {
     // 옛 형식(hwp, xls, doc, ppt) 또는 암호 걸린 OOXML(EncryptedPackage)
     const { default: CFB } = await import('cfb');
@@ -35,14 +47,13 @@ export async function detect(name, buffer) {
     try { cfb = CFB.read(new Uint8Array(buffer), { type: 'array' }); } catch { cfb = null; }
     const has = (n) => cfb && cfb.FullPaths.some((p) => p.endsWith('/' + n));
     if (has('EncryptedPackage')) throw encrypted();
-    if (has('FileHeader') && has('BodyText') ) kind = 'hwp';
-    else if (has('FileHeader')) kind = 'hwp';
+    if (has('FileHeader')) kind = 'hwp';
     else if (has('Workbook') || has('Book')) kind = 'xlsx';
     else if (has('WordDocument')) kind = 'doc';
     else if (has('PowerPoint Document')) kind = 'ppt';
     else if (ext === 'hwp') kind = 'hwp';
   } else if (startsWith(u8, ZIP)) {
-    if (!['docx', 'xlsx', 'pptx', 'hwpx'].includes(kind)) {
+    if (!['docx', 'xlsx', 'pptx', 'hwpx', 'odf'].includes(kind)) {
       const { default: JSZip } = await import('jszip');
       try {
         const zip = await JSZip.loadAsync(buffer);
@@ -52,6 +63,7 @@ export async function detect(name, buffer) {
         else if (names.some((n) => n.startsWith('ppt/'))) kind = 'pptx';
         else if (names.some((n) => /^Contents\/section\d+\.xml$/i.test(n))) kind = 'hwpx';
         else if (names.includes('content.xml') && ext === 'ods') kind = 'xlsx';
+        else if (names.includes('content.xml')) kind = 'odf';
       } catch { /* 깨진 zip은 각 뷰어가 안내 */ }
     }
   }

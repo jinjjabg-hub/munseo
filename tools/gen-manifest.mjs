@@ -6,6 +6,9 @@ import path from 'node:path';
 const EXTENSIONS = [
   // 1단계
   'pdf', 'hwp', 'hwpx', 'docx', 'xlsx', 'xlsm', 'xls', 'csv', 'ods', 'pptx',
+  // 2단계
+  'doc', 'ppt', 'odt', 'odp', 'rtf', 'txt', 'md', 'json', 'xml', 'html', 'htm',
+  'png', 'jpg', 'jpeg', 'webp', 'gif',
 ];
 
 const MIME_TYPES = [
@@ -23,6 +26,12 @@ const MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'application/vnd.oasis.opendocument.spreadsheet',
   'text/csv', 'text/comma-separated-values', 'application/csv',
+  // 2단계: 옛 워드·파워포인트, OpenDocument, RTF, 텍스트, 이미지
+  'application/msword', 'application/vnd.ms-powerpoint',
+  'application/vnd.oasis.opendocument.text', 'application/vnd.oasis.opendocument.presentation',
+  'application/rtf', 'text/rtf',
+  'text/plain', 'text/markdown', 'text/x-markdown', 'application/json', 'application/xml', 'text/xml', 'text/html',
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
 ];
 
 // 파일명에 점이 여러 개여도 걸리도록: .*\.hwp / .*\..*\.hwp / ... (안드로이드 패턴은 XML에서 \\ 두 번)

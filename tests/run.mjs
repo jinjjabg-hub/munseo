@@ -67,6 +67,18 @@ async function openFile(page, file, timeout = 60000) {
   return state;
 }
 
+async function pdfText(file) {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(file)), useSystemFonts: true, isEvalSupported: false }).promise;
+  let text = '';
+  for (let i = 1; i <= doc.numPages; i++) {
+    const tc = await (await doc.getPage(i)).getTextContent();
+    text += tc.items.map((x) => x.str).join(' ') + '\n';
+  }
+  const squash = (t) => t.replace(/[^\p{L}\p{N}]+/gu, ''); // 글자·숫자만 비교 (PDF는 공백·하이픈 모양이 달라질 수 있음)
+  return { pages: doc.numPages, text: squash(text), has: (needle) => squash(text).includes(squash(needle)) };
+}
+
 const shot = (page, name) => page.screenshot({ path: path.join(OUT, name + '.png') });
 const rec = (area, item, pass, detail) => { rows.push({ area, item, pass, detail }); console.log(`${pass ? 'PASS' : 'FAIL'}  ${area} | ${item} | ${detail}`); };
 const want = (area) => !filter || area.includes(filter);
@@ -262,6 +274,157 @@ const tests = {
       rec('오류', label, !!s.error && re.test(s.error), s.error || '오류 없음');
       if (f === 'encrypted.hwp') await shot(page, 'err-hwp-encrypted');
     }
+    await page.context().close();
+  },
+
+
+  async '옛형식'() {
+    const { page } = await newPage();
+    const cases = [
+      ['legacy-korean.doc', /월간 업무 보고서/, /END|마지막/, '옛 워드(.doc) 한글'],
+      ['legacy-korean.ppt', /2025 상반기 사업 보고/, /핵심 요약/, '옛 파워포인트(.ppt) 한글'],
+      ['sample.rtf', /월간 업무 보고서/, /실적 표/, 'RTF 한글'],
+      ['sample.odt', /월간 업무 보고서/, /실적 표/, 'OpenDocument 글(.odt)'],
+      ['sample.odp', /2025 상반기 사업 보고/, /핵심 요약/, 'OpenDocument 슬라이드(.odp)'],
+      ['real-harmless-clean.doc', /harmless test document/, /ünicöde/, '실제 MS워드 .doc'],
+      ['real-embedded-simple-2007.ppt', /Embedded Objects/, /simple harmless ASCII/, '실제 MS파워포인트 .ppt'],
+      ['real-sample_with_vba.ppt', /PPT VBA TEST/, /./, '실제 .ppt (매크로 포함)'],
+    ];
+    for (const [f, a, b, label] of cases) {
+      const s = await openFile(page, path.join(FIX, f));
+      rec('옛형식', label, !s.error && a.test(s.text) && b.test(s.text), s.error || `${f} · ${s.text.replace(/\s+/g, ' ').slice(0, 60)}`);
+    }
+    for (const [f, label] of [['real-encrypted.doc', '암호 .doc'], ['real-encrypted.ppt', '암호 .ppt']]) {
+      const s = await openFile(page, path.join(FIX, f));
+      rec('암호', `${label} → 안내 문구`, !!s.error && /암호/.test(s.error), s.error || '오류 없음');
+    }
+    await openFile(page, path.join(FIX, 'legacy-korean.doc'));
+    await shot(page, 'doc-legacy');
+    await page.context().close();
+  },
+
+  async '텍스트'() {
+    const { page } = await newPage();
+    for (const [f, re, label] of [
+      ['utf8.txt', /END-OF-TXT/, 'UTF-8 텍스트'], ['cp949.txt', /END-OF-CP949/, 'CP949(윈도) 텍스트'],
+      ['readme.md', /END-OF-MD/, '마크다운(.md)'], ['data.json', /END-OF-JSON/, 'JSON'], ['feed.xml', /END-OF-XML/, 'XML'],
+    ]) {
+      const s = await openFile(page, path.join(FIX, f));
+      rec('텍스트', label, !s.error && re.test(s.text) && (f !== 'cp949.txt' || /윈도 메모장/.test(s.text)), s.error || s.text.slice(0, 40).replace(/\n/g, ' '));
+    }
+    const s = await openFile(page, path.join(FIX, 'page.html'));
+    const titleChanged = await page.evaluate(() => document.title !== '내 문서 뷰어');
+    rec('텍스트', 'HTML은 실행하지 않고 소스로 보임', /<script>/.test(s.text) && /END-OF-HTML/.test(s.text) && !titleChanged, '소스 글자 표시, 스크립트 미실행');
+    // 큰 텍스트
+    const big = path.join(OUT, '_big.txt');
+    fs.writeFileSync(big, Array.from({ length: 200000 }, (_, i) => `줄 ${i + 1}: 큰 텍스트 파일 시험입니다 가나다라마바사`).join('\n') + '\nEND-OF-BIG');
+    const t0 = Date.now();
+    const b = await openFile(page, big);
+    rec('텍스트', `큰 텍스트(${(fs.statSync(big).size / 1e6).toFixed(1)}MB) 첫 화면 (CPU 보통)`, !b.error && b.perf.openMs < 1500, `앱이 연 시간 ${b.perf.openMs}ms (시험 도구 대기 포함 ${Date.now() - t0}ms)`);
+    await page.context().close();
+  },
+
+  async '이미지'() {
+    const { page } = await newPage();
+    for (const f of ['photo.png', 'photo.jpg', 'photo.webp', 'anim.gif']) {
+      const s = await openFile(page, path.join(FIX, f));
+      const nat = await page.evaluate(() => { const i = document.querySelector('.img-wrap img'); return i ? [i.naturalWidth, i.naturalHeight] : null; });
+      rec('이미지', f, !s.error && nat && nat[0] > 0, s.error || `원본 ${nat && nat.join('×')}`);
+    }
+    await openFile(page, path.join(FIX, 'photo.png'));
+    const z0 = await page.evaluate(() => parseFloat(document.querySelector('.img-wrap').style.zoom));
+    await page.mouse.move(200, 300);
+    await page.keyboard.down('Control'); await page.mouse.wheel(0, -400); await page.keyboard.up('Control');
+    await page.waitForTimeout(200);
+    const z1 = await page.evaluate(() => parseFloat(document.querySelector('.img-wrap').style.zoom));
+    rec('이미지', '확대 동작', z1 > z0, `배율 ${z0.toFixed(2)} → ${z1.toFixed(2)}`);
+    await shot(page, 'image');
+    const tools = await page.evaluate(() => document.getElementById('tools').hidden);
+    rec('이미지', '이미지에는 도구 줄 없음', tools, '검색·PDF저장 버튼 숨김');
+    await page.context().close();
+  },
+
+  async '검색'() {
+    const { page } = await newPage();
+    const find = (q) => page.evaluate((x) => window.__app.search(x), q);
+    // 워드
+    await openFile(page, path.join(FIX, 'complex.docx'));
+    let r = await find('본문 문단 5');
+    let marks = await page.evaluate(() => document.querySelectorAll('mark.find-hit').length);
+    rec('검색', '워드: 글자 찾기 + 강조', r.count >= 1 && marks >= 1, `${r.count}건, 강조 ${marks}개`);
+    r = await find('실적');
+    rec('검색', '워드: 표 근처 글자', r.count >= 1, `${r.count}건`);
+    r = await find('없는글자zzzq');
+    rec('검색', '워드: 없는 글자 → 0건', r.count === 0, `${r.count}건`);
+    await shot(page, 'search-docx');
+    // 한글(hwp) — 표 안 글자도
+    const hdir = path.join(FIX, 'hwp');
+    await openFile(page, path.join(hdir, fs.readdirSync(hdir).find((f) => f.endsWith('kaist_kaist-585.hwp'))));
+    const hwpText = await page.evaluate(() => document.querySelector('.hw-doc td')?.innerText || '');
+    r = await find(hwpText.trim().slice(0, 3));
+    rec('검색', '한글: 표 안 글자 찾기', r.count >= 1, `"${hwpText.trim().slice(0, 3)}" ${r.count}건`);
+    const n1 = await page.evaluate(() => window.__app.next());
+    rec('검색', '한글: 다음 결과로 이동', r.count < 2 || n1.index === 1, `${n1.index + 1}/${n1.count}`);
+    // 엑셀
+    await openFile(page, path.join(FIX, 'multi-sheet.xlsx'), 120000);
+    r = await find('row-59999-');
+    await page.waitForTimeout(400);
+    const cur = await page.evaluate(() => document.querySelector('.xl .c.cur')?.textContent || '');
+    rec('검색', '엑셀: 6만 행 시트에서 찾아 이동', r.count === 1 && /row-59999-/.test(cur), `${r.count}건, 현재 칸 "${cur}"`);
+    r = await find('R7C9');
+    rec('검색', '엑셀: 다른 시트(3번째)에서 찾기', r.count >= 1, `${r.count}건`);
+    // 텍스트
+    await openFile(page, path.join(FIX, 'utf8.txt'));
+    r = await find('두 번째');
+    rec('검색', '텍스트 파일', r.count === 1, `${r.count}건`);
+    // PDF
+    await openFile(page, path.join(FIX, 'hundred-pages.pdf'));
+    r = await find('Page 77 of 100');
+    await page.waitForTimeout(600);
+    const pdfMark = await page.evaluate(() => { const m = document.querySelector('.textLayer mark.find-hit.cur'); return m ? m.closest('.pdf-page').dataset.n : null; });
+    rec('검색', 'PDF(100쪽): 찾아서 77쪽으로 이동·강조', r.count === 1 && pdfMark === '77', `${r.count}건, 강조된 쪽 ${pdfMark}`);
+    r = await find('END-PAGE-1');
+    rec('검색', 'PDF: 여러 결과 (END-PAGE-1…)', r.count >= 11, `${r.count}건`);
+    await openFile(page, path.join(FIX, 'korean-100.pdf'));
+    const t0 = Date.now();
+    r = await find('검색어-077');
+    await page.waitForTimeout(600);
+    const km = await page.evaluate(() => { const m = document.querySelector('.textLayer mark.find-hit'); return m ? m.closest('.pdf-page').dataset.n : null; });
+    rec('검색', '한글 PDF(120쪽): 한글 검색어 (77쪽에 6번 나옴)', r.count === 6 && km === '77', `${r.count}건, 쪽 ${km}, ${Date.now() - t0}ms`);
+    await shot(page, 'search-pdf');
+    await page.context().close();
+  },
+
+  async 'PDF저장'() {
+    const { page } = await newPage({ viewport: { width: 1000, height: 900 } });
+    const grab = async (file, name, checks) => {
+      await openFile(page, path.join(FIX, file), 120000);
+      const orient = await page.evaluate(() => window.__app.preparePrint());
+      const out = path.join(OUT, name + '.pdf');
+      await page.pdf({ path: out, format: 'A4', landscape: orient === 'landscape', printBackground: true, margin: { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' } });
+      const txt = await pdfText(out);
+      await page.evaluate(() => document.getElementById('print-root').replaceChildren());
+      return { ...txt, size: fs.statSync(out).size, orient };
+    };
+    let g = await grab('sample.hwpx', 'save-hwpx');
+    rec('PDF저장', '한글(.hwpx) → PDF', g.pages >= 1 && g.has('END-OF-HWPX') && g.has('칸3-3'), `${g.pages}쪽, ${Math.round(g.size / 1024)}KB`);
+    const hdir = path.join(FIX, 'hwp');
+    g = await grab('hwp/' + fs.readdirSync(hdir).find((f) => f.endsWith('kaist_kaist-585.hwp')), 'save-hwp');
+    rec('PDF저장', '한글(.hwp) → PDF, 표 포함', g.pages >= 1 && g.has('학적팀'), `${g.pages}쪽, ${Math.round(g.size / 1024)}KB`);
+    g = await grab('complex.docx', 'save-docx');
+    rec('PDF저장', '워드 → PDF, 쪽 나뉨', g.pages >= 2 && g.has('END-OF-DOCX') && g.has('병합된 셀'), `${g.pages}쪽, ${Math.round(g.size / 1024)}KB`);
+    g = await grab('table-picture.pptx', 'save-pptx');
+    rec('PDF저장', '파워포인트 → PDF (슬라이드당 1쪽, 가로)', g.pages === 4 && g.orient === 'landscape' && g.has('END-OF-PPTX'), `${g.pages}쪽(슬라이드 4장), ${g.orient}`);
+    g = await grab('multi-sheet.xlsx', 'save-xlsx');
+    rec('PDF저장', '엑셀 → PDF (시트 3개, 행 많으면 앞부분)', g.pages >= 3 && g.has('항목') && g.has('앞 3,000행'), `${g.pages}쪽, ${Math.round(g.size / 1024)}KB`);
+    g = await grab('legacy-korean.doc', 'save-doc');
+    rec('PDF저장', '옛 워드(.doc) → PDF', g.pages >= 1 && g.has('월간 업무 보고서'), `${g.pages}쪽`);
+    // 버튼 노출
+    const vis = async (file) => { await openFile(page, path.join(FIX, file)); return page.evaluate(() => ({ s: !document.getElementById('btn-search').hidden, v: !document.getElementById('btn-save').hidden, h: !document.getElementById('btn-share').hidden })); };
+    let v = await vis('complex.docx');
+    rec('PDF저장', '워드: 검색·PDF저장 버튼 보임', v.s && v.v, JSON.stringify(v));
+    v = await vis('hundred-pages.pdf');
+    rec('PDF저장', 'PDF: 검색 보임, "PDF로 저장" 없음', v.s && !v.v, JSON.stringify(v));
     await page.context().close();
   },
 

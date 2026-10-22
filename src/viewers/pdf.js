@@ -68,7 +68,7 @@ export async function open(container, buffer, ctx = {}) {
     el.dataset.n = String(n);
     pagesEl.appendChild(el);
     pageEls.push(el);
-    states.push({ scale: 0, task: null, busy: false, textDiv: null, canvas: null });
+    states.push({ scale: 0, task: null, busy: false, textDiv: null, canvas: null, tl: null, ready: null });
   }
 
   function layoutAll() {
@@ -116,13 +116,15 @@ export async function open(container, buffer, ctx = {}) {
       textDiv.style.width = viewport.width + 'px';
       textDiv.style.height = viewport.height + 'px';
       const tl = new pdfjs.TextLayer({ textContentSource: page.streamTextContent(), container: textDiv, viewport });
-      tl.render().catch(() => {});
+      const ready = tl.render().then(() => { if (states[n].tl === tl) applyHighlights(n); }).catch(() => {});
 
       clearPage(n);
       const el = pageEls[n];
       el.append(canvas, textDiv);
       st.canvas = canvas;
       st.textDiv = textDiv;
+      st.tl = tl;
+      st.ready = ready;
       st.scale = s;
       if (firstPaintMs == null) {
         firstPaintMs = performance.now() - t0;
@@ -144,8 +146,133 @@ export async function open(container, buffer, ctx = {}) {
     el.replaceChildren();
     st.canvas = null;
     st.textDiv = null;
+    st.tl = null;
+    st.ready = null;
     st.scale = 0;
   }
+
+  // ---- 검색 ----
+  const norm = (t) => t.normalize('NFC').toLowerCase();
+  const pageStrs = new Map(); // 쪽 → 글자 조각 목록 (글자층과 같은 순서)
+  async function strsOf(n) {
+    if (pageStrs.has(n)) return pageStrs.get(n);
+    const page = n === 1 ? first : await pdf.getPage(n);
+    const tc = await page.getTextContent();
+    const strs = tc.items.filter((it) => it.str !== undefined).map((it) => it.str);
+    pageStrs.set(n, strs);
+    return strs;
+  }
+  let query = '';
+  let hits = []; // { page, nth } : 그 쪽의 nth번째 결과
+  let hitIdx = -1;
+  const matchesIn = (strs, q) => {
+    const joined = strs.join('');
+    const lower = norm(joined);
+    const out = [];
+    if (lower.length !== joined.length) return out;
+    for (let from = 0; ; ) {
+      const at = lower.indexOf(q, from);
+      if (at < 0) break;
+      out.push([at, at + q.length]);
+      from = at + q.length;
+    }
+    return out;
+  };
+
+  function clearMarks(n) {
+    const div = states[n].textDiv;
+    if (!div) return;
+    for (const m of div.querySelectorAll('mark.find-hit')) {
+      const parent = m.parentNode;
+      parent.replaceChild(document.createTextNode(m.textContent), m);
+      parent.normalize();
+    }
+  }
+
+  function applyHighlights(n) {
+    const st = states[n];
+    clearMarks(n);
+    if (!query || !st.tl) return;
+    const strs = st.tl.textContentItemsStr;
+    const divs = st.tl.textDivs;
+    const q = norm(query);
+    const ms = matchesIn(strs, q);
+    if (!ms.length) return;
+    const starts = [];
+    let acc = 0;
+    for (const t of strs) { starts.push(acc); acc += t.length; }
+    // 뒤에서부터 감싸야 앞쪽 위치가 어긋나지 않는다
+    for (let mi = ms.length - 1; mi >= 0; mi--) {
+      const [a, b] = ms[mi];
+      const isCur = hitIdx >= 0 && hits[hitIdx].page === n && hits[hitIdx].nth === mi;
+      for (let i = strs.length - 1; i >= 0; i--) {
+        const ns = starts[i], ne = ns + strs[i].length;
+        if (ne <= a || ns >= b || !divs[i]) continue;
+        const tn = divs[i].firstChild;
+        if (!tn || tn.nodeType !== 3) continue;
+        const r = document.createRange();
+        r.setStart(tn, Math.max(a, ns) - ns);
+        r.setEnd(tn, Math.min(b, ne) - ns);
+        const mark = document.createElement('mark');
+        mark.className = 'find-hit' + (isCur ? ' cur' : '');
+        mark.dataset.nth = String(mi);
+        r.surroundContents(mark);
+      }
+    }
+  }
+
+  async function goHit(i) {
+    if (!hits.length) return { count: 0, index: -1 };
+    const prev = hitIdx >= 0 ? hits[hitIdx].page : -1;
+    hitIdx = (i + hits.length) % hits.length;
+    const h = hits[hitIdx];
+    if (prev > 0 && prev !== h.page) applyHighlights(prev);
+    pageEls[h.page].scrollIntoView({ block: 'start' });
+    // 그 쪽이 그려질 때까지 기다린 뒤 강조하고, 결과 위치로 이동
+    for (let k = 0; k < 100; k++) {
+      renderPage(h.page);
+      if (states[h.page].ready) { await states[h.page].ready; break; }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    applyHighlights(h.page);
+    const mark = states[h.page].textDiv && states[h.page].textDiv.querySelector(`mark.find-hit.cur`);
+    if (mark) mark.scrollIntoView({ block: 'center', inline: 'center' });
+    return { count: hits.length, index: hitIdx };
+  }
+
+  let searchToken = 0;
+  const search = {
+    async find(q) {
+      const my = ++searchToken;
+      const old = hits.map((h) => h.page);
+      query = q.trim();
+      hits = [];
+      hitIdx = -1;
+      for (const n of new Set(old)) applyHighlights(n);
+      if (!query) return { count: 0, index: -1 };
+      const nq = norm(query);
+      for (let n = 1; n <= N; n++) {
+        if (my !== searchToken) return { count: hits.length, index: hitIdx };
+        const strs = await strsOf(n);
+        const ms = matchesIn(strs, nq);
+        ms.forEach((_, nth) => hits.push({ page: n, nth }));
+        if (n % 5 === 0) await new Promise((r) => setTimeout(r, 0));
+      }
+      // 지금 보이는 쪽들도 강조
+      visible.forEach((n) => { if (states[n].tl) applyHighlights(n); });
+      return hits.length ? goHit(0) : { count: 0, index: -1 };
+    },
+    next: () => goHit(hitIdx + 1),
+    prev: () => goHit(hitIdx - 1),
+    async clear() {
+      searchToken++;
+      const pages = new Set(hits.map((h) => h.page));
+      query = '';
+      hits = [];
+      hitIdx = -1;
+      for (const n of pages) applyHighlights(n);
+    },
+  };
 
   const visible = new Set();
   const io = new IntersectionObserver(
@@ -242,6 +369,7 @@ export async function open(container, buffer, ctx = {}) {
 
   return {
     kind: 'pdf',
+    search,
     pages: N,
     destroy() {
       alive = false;

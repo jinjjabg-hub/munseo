@@ -12,6 +12,9 @@ export function blocksToHtml(blocks) {
       }
       emptyRun = 0;
       html += `<p>${esc(b.text).replace(/\n/g, '<br>').replace(/\t/g, '&emsp;')}</p>`;
+    } else if (b.t === 'h') {
+      emptyRun = 0;
+      html += `<h3 class="hw-h">${esc(b.text)}</h3>`;
     } else if (b.t === 'table') {
       emptyRun = 0;
       html += tableHtml(b);
@@ -53,6 +56,7 @@ export function blocksToText(blocks, indent = '') {
   const lines = [];
   for (const b of blocks) {
     if (b.t === 'p') lines.push(indent + b.text.replace(/\n/g, '\n' + indent));
+    else if (b.t === 'h') lines.push(indent + '## ' + b.text);
     else if (b.t === 'table') {
       const byRow = new Map();
       for (const c of b.cells) {
