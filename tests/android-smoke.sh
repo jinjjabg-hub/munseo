@@ -129,6 +129,12 @@ find_check "한글" sample.hwp application/x-hwp "두 번째" 1
 find_check "워드" sample.docx application/vnd.openxmlformats-officedocument.wordprocessingml.document "시험" 1
 find_check "엑셀" sample.xlsx application/vnd.openxmlformats-officedocument.spreadsheetml.sheet "가나다" 1
 find_check "파워포인트" sample.pptx application/vnd.openxmlformats-officedocument.presentationml.presentation "시험" 1
+# PDF가 실제로 화면에 그려졌는지(쪽이 비어 있지 않은지) 픽셀로 확인
+adb shell am start -W -a android.intent.action.VIEW -d "content://com.jinjjabg.docviewer.smoke/sample.pdf" -t application/pdf -n "$PKG/.MainActivity" >/dev/null 2>&1
+sleep 5
+PX="$(cdp "(() => { const c = document.querySelector('.pdf-page canvas'); if (!c) return { canvas: false }; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) dark++; return { canvas: true, w: c.width, h: c.height, dark }; })()")"
+DK="$(echo "$PX" | sed -n 's/.*"dark":\([0-9]*\).*/\1/p')"
+if [ -n "$DK" ] && [ "$DK" -gt 200 ]; then rec "PDF 쪽이 실제로 그려짐" PASS "$PX"; else rec "PDF 쪽이 실제로 그려짐" FAIL "${PX:-없음} $(head -c 200 "$OUT/cdp-err.txt" 2>/dev/null)"; fi
 find_check "PDF" sample.pdf application/pdf "SMOKE" 1
 
 # ---- 2단계: PDF로 저장 (안드로이드 인쇄 기능 + 권한 없이 Documents 저장) ----
